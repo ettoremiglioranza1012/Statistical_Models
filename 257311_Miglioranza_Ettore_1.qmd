@@ -21,19 +21,22 @@ library(tidyverse)
 library(mice)
 library(e1071)
 library(caret)
+library(corrplot)
+library(patchwork)
 ```
 
 
 # Exploratory Data Analysis
 
-After setting up a virtual environment suitable for carrying out the scientific analysis, we load some useful packages to improve the capabilities of the analysis software. In particular, as suggested we load *ISLR*, *ISLR2*, *ROCR* and *tidyverse*. For the purposes of this research, we will also use *e1071*, *mice*, *caret*, 
+After setting up a virtual environment suitable for carrying out the scientific analysis, we load some useful packages to improve the capabilities of the analysis software. In particular, as suggested we load *ISLR*, *ISLR2*, *ROCR* and *tidyverse*. For the purposes of this research, we will also use *e1071*, *mice*, *caret*, *corrplot*, *patchwork*
+
 
 The first step in our analysis is to load the data contained in *chd.csv*. With the function *glimpse()* obtain an overview of the data.
 
 ```{r}
 #| echo: false
 # Load the dataset
-data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/First Year/Second Semester/Stat mod/chd.csv", show_col_types = FALSE)
+data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/First Year/Second Semester/Stat mod/HWs_Directory/chd.csv", show_col_types = FALSE)
 
 # Print structure and a preview of the data
 glimpse(data)
@@ -51,18 +54,17 @@ colSums(is.na(data))
 # ...
 ```
 
-Since we have a small data set to use, we think it is best to use an imputator to replace the missing values with the actual expected values. We will now make the first copy of our data set, as we will apply two different imputation procedures to the two copies. We will then compare the future results of the analysis on these two different batches of data to see if one set of techniques worked better than the other. 
+Since we have a small data set to use, we think it is best to use an imputator to replace the missing values with the actual expected values. We will now make a copy of our data set, as we will apply the imputer function.
 
-We then create *data_simple*, where we impute missing values with basic metrics such as mean, median (if the data distribution is skewed) for continuous data and mode for the categorical ordinal *education*. We then copy the dataset into *data_mice*, a copy in which we will use more complex functions.
+We then create *data_simple*, where we impute missing values with basic metrics such as mean, median (if the data distribution is skewed) for continuous data and mode for the categorical ordinal *education*. 
 
 ```{r}
 #| echo: false
-# Create two copies of the dataset
-data_mice <- data
+# Create copy of the dataset
 data_simple <- data
 ```
 
-Starting with the *simple_imputer()* function, we first want to evaluate the skewness of continuous numeric variables.
+Before we apply the *simple_imputer()* we first want to evaluate the skewness of continuous numeric variables.
 
 ```{r}
 #| echo: false
@@ -72,11 +74,10 @@ skew_values
 # ...
 ```
 
-Using the rule of thumb, we can asses moderate skewness in all variables, except for *cpd*, which proves to be significantly skewed. Therefore, the median will be a preferable metric for imputing values. 
+We can asses moderate skewness in all variables, except for *cpd*, which proves to be significantly skewed. Therefore, the median will be a preferable metric for imputing values. 
 
-For simplified imputations, we will use mode to complete missing values for *education*. Mode imputation is commonly used for the categorical variables but has some limitations. It is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. However, we will evaluate their impact by comparing the performance of this basic dataset with that imputed by a more advanced method.
+We will use mode to complete missing values for *education*. Mode imputation is commonly used for the categorical variables but has some limitations. It is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. The output below confirms that the missing values were correctly replaced by the imputer function. 
 
-\newpage
 ```{r}
 #| echo: false
 simple_imputer <- function(data) {
@@ -94,44 +95,85 @@ simple_imputer <- function(data) {
 }
 
 # Apply the function to data_simple
-data_simple <- simple_imputer(data_simple)
+data_simple <- simple_imputer(data)
 colSums(is.na(data_simple))
 ```
 
-For complex imputation we use *mice* (Multivariate Imputation by Chained Equations). Mice has the ability to perform multiple imputations by actually predicting each variable with missing data, using the other variables as predictors (which is great because this mitigates the uncertainty of missing values). FORSE APPROFONDISCI FUNZIONI USATE!
+\newpage
+ Now that we have handled the missing values, we will search for possible significant relationships between variables. For data exploration we'll plot only information from the data_simple() copy of the data. 
+
+The first step will be to draw a heat map of the Pearson correlation matrix between the variables. This will help us identify potential multicollinearity issues between predictors and assess the strength of linear relationships between each predictor and the response variable. Since correlation requires numerical inputs, the categorical variables *CHD* and *SEX* must first be converted into binary numerical variables (e.g., 1 = Yes, 0 = No). Once transformed, they can be included in the correlation matrix. From Figure 1, it can be seen that there are no strong linear relationships between the predictors and the response variable. The correlation with CHD is weak for all characteristics, with *AGE* (r = 0.23), *HTN* (r = 0.18) and *DBP* (r = 0.15) showing the highest associations. These weak positive correlations suggest limited linear discriminative power, although they could still contribute useful information in a multivariate model. As expected, positive correlations were also found between *SMOKER* and *CPD* (r = 0.77), *HNT* and *DBP* (r = 0.61), *DBP* and *BMI* (r = 0.38). This indicates potential multicollinearity, which should be monitored during model fitting, particularly in the context of regression analysis, where correlated predictors may inflate the variance in coefficient estimates and reduce interpretability.
+
+To further investigate the discriminatory power of continuous and categorical predictors, we examined the distributions of those variables that showed some correlation with CHD. Specifically, we used boxplots for continuous predictors and bar plots with proportions for categorical ones. As shown in Figures 2 and 3, the distribution of CHD cases varies across different levels of the predictors *AGE*, *DBP*, *HTN* and *SEX*,  providing additional visual evidence of a relationship between these variables and the response. These differences support the hypothesis that certain predictors may contribute useful information to CHD risk modeling. We care to 
 
 ```{r}
 #| echo: false
-#| #| message: false
-#| warning: false
-#| results: 'hide'
-mice_imputer <- function(data) {
-  data$education <- factor(data$education, levels = 1:4, ordered = TRUE)
+#| fig.width: 6
+#| fig.height: 6
+#| fig.align: "center"
+#| fig.cap: "Correlation heatmap (including CHD)"
+# Create binary response: 1 = CHD Yes, 0 = No
+data_corr <- data %>%
+  mutate(
+    sex = ifelse(sex == "Male", 1, 0),
+    CHD = ifelse(CHD == "Yes", 1, 0)
+  ) %>%
+  select(where(is.numeric)) %>%
+  drop_na()  # remove rows with NAs for correlation
 
-  imp <- mice(data, m = 5, method = c(
-    "",      # sex
-    "",      # age
-    "polr",  # education
-    "",      # smoker
-    "pmm",   # cpd
-    "", "", "",        # stroke, HTN, diabetes
-    "pmm",             # chol
-    "",                # DBP
-    "pmm", "pmm",      # BMI, HR
-    ""                 # CHD
-  ), seed = 123)
-  return(complete(imp, 1))
-}
-data_mice <- mice_imputer(data_mice)
+cor_matrix <- cor(data_corr)
+
+# Optional: visual inspection
+library(corrplot)
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", addCoef.col = "black", number.cex = 0.6,
+         mar = c(0,0,1,0))
 ```
+
+
+\newpage
+```{r}
+#| echo: false
+#| fig.cap: "Distribution of continuous predictors against CHD"
+# Boxplot 1: Age
+p1 <- ggplot(data_simple, aes(x = CHD, y = age, fill = CHD)) +
+  geom_boxplot() + labs(title = "Age") + theme_minimal()
+
+# Boxplot 2: DBP
+p2 <- ggplot(data_simple, aes(x = CHD, y = DBP, fill = CHD)) +
+  geom_boxplot() + labs(title = "DBP") + theme_minimal()
+
+# Combine into one row
+(p1 | p2)
+```
+
 
 
 ```{r}
 #| echo: false
-colSums(is.na(data_mice))
+#| fig.cap: "CHD proportions by hypertension status"
+# Bar plot: HTN vs CHD
+b1 <- ggplot(data_simple, aes(x = factor(HTN), fill = CHD)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_discrete(labels = c("0" = "No HTN", "1" = "HTN")) +
+  labs(title = "CHD Prop. by HTN", x = "Hypertension", y = "Proportion") +
+  theme_minimal()
+
+b2 <- ggplot(data_simple, aes(x = factor(sex), fill = CHD)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  labs(title = "CHD Prop.by Sex", x = "Sex", y = "Proportion") +
+  theme_minimal()
+
+(b1 | b2)
+
 ```
 
-As before, R's output shows that the imputations occurred correctly. Now that we have handled the missing values well, we will analyze the nature of the response variable. 
+
+\newpage
+We proceed with the analysis of the nature of the response variable. Since the response variable is categorical and binary we want to asses the level of balance inside the two categories by computing the proportion of each one of them on the total number of observations.
 
 ```{r}
 #| echo: false
@@ -139,9 +181,9 @@ As before, R's output shows that the imputations occurred correctly. Now that we
 prop.table(table(data$CHD))
 ```
 
-The output clearly shows that the response variable is strongly skewed toward the “No” class. This means that most observations do not have the event of interest (e.g., no coronary artery disease within 10 years). This has some implications for modeling, such as the fact that standard classifiers, e.g., logistic regression, will likely favor the most representative class, and perform poorly in making predictions about the minority class. Moreover, in this scenario, the Accurancy is misleading, since the prediction of the majority class alone would still provide high accuracy (e.g., 84%) even if all cases of the minority class were missing.
+The output clearly shows that the response variable is strongly skewed toward the “No” class. This means that most observations do not have the event of interest (e.g., no coronary artery disease within 10 years). This has some implications for modeling, such as the fact that standard classifiers, e.g., logistic regression, will likely favor the most representative class, and perform poorly in making predictions about the minority class. In this scenario, the Accurancy is misleading, since the prediction of the majority class alone would still provide high accuracy (e.g., 84%) even if all cases of the minority class were missing.
 
-In addition, we must prevent the random partitioning of data into a training and test set from leading to unbalanced sets where the true proportions of the sample are not actually represented correctly. To do this we use a technique called stratified sampling, which is aimed precisely at maintaining the proportions of the categories of a variable in both subsets of the sample. In practice, we will divide the sample into two groups filtered by the two categories of the response variable (in this case “yes” and “no”). These two groups are called *strata*. We then branch out some instances from the two groups and place them in our desired training or test set in a certain proportion (e.g., 70% of the instances in the training set and the other 30% in the test). This maintains the original proportion in both sets. In R, we use *caret::createDataPartition()* which is the function provided to do this.
+In addition, we must prevent the random partitioning of data into a training and test set from leading to unbalanced sets where the true proportions of the sample are not actually represented correctly. To do this we use a technique called stratified sampling, which is aimed precisely at maintaining the proportions of the categories of a variable in both subsets of the sample. In practice, we will divide the sample into two groups filtered by the two categories of the response variable (in this case “yes” and “no”). These two groups are called *strata*. We then branch out some instances from the two groups and place them in our desired training or test set in a certain proportion (we chose to put 70% of the instances in the training set and the other 30% in the test). This maintains the original proportion in both sets. In R, we use *caret::createDataPartition()* which is the function provided to do this. After that, we verify the new proportions of both the sets.
 
 ```{r}
 #| echo: false
@@ -160,8 +202,31 @@ train_test_strata <- function(data) {
 split_simple <- train_test_strata(data_simple)
 train_simple <- split_simple$train
 test_simple  <- split_simple$test
-
-split_mice <- train_test_strata(data_mice)
-train_mice <- split_mice$train
-test_mice  <- split_mice$test
+prop.table(table(train_simple$CHD))
+prop.table(table(test_simple$CHD))
 ```
+
+\newpage
+We fit the following GLM model:
+\begin{equation*}
+\mbox{logit}(\mbox{E(CHD)}) = \beta_0 + \beta_1 \mbox{sex} + \beta_2 \mbox{age} + \beta_3 \mbox{education} + \ldots + \beta_{12} \mbox{HR}
+\end{equation*} 
+```{r}
+#| echo: false
+# Convert CHD and sex to factors if not already
+data_glm <- data_simple %>%
+  mutate(
+    CHD = factor(CHD, levels = c("No", "Yes")),
+    sex = factor(sex)
+  )
+
+# Fit full logistic regression model
+glm_fit <- glm(CHD ~ sex + age + education + smoker + cpd + stroke + HTN +
+                 diabetes + chol + DBP + BMI + HR,
+               data = data_glm, family = binomial)
+
+# View summary
+summary(glm_fit)
+```
+
+The output represent the fitted logistic regression model, in which we estimate the log-odds of developing *CHD* as a function of an intercept and 12 predictor variables. The intercept (-7.597) represents the log-odds of developing *CHD* for an individual belonging to all the reference categories—such as being male, having the lowest education level, not smoking, and having no history of stroke, hypertension, or diabetes. Its strongly negative value reflects a very low baseline likelihood of developing *CHD* in this group. The estimated coefficient for *SEX* is positive and highly significant, indicating that, all else being equal, males have a higher log-odds of developing CHD compared to females. *AGE* is also highly significant, with each additional year increasing the log-odds of developing CHD by 0.07032. In terms of the odds ratio, exp(0.07032) is approximately 1.072, indicating that each extra year of *AGE* raises the odds of developing CHD by about 7%. The variable *CPD* (cigarettes per day) is highly significant, whereas smoking status itself is not. This may suggest that the intensity of smoking provides more meaningful information about the risk of developing CHD than simply whether someone smokes or not.
