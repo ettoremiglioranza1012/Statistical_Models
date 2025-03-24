@@ -1,0 +1,167 @@
+---
+title: "Statitical Models Homework 1"
+format: pdf
+---
+
+
+```{r}
+#| label: setup
+#| include: false
+#| warning: false
+#| message: false
+#| tidy: true
+#| tidy.opts:
+#|   width.cutoff: 80
+
+# Load required libraries
+library(ISLR)
+library(ISLR2)
+library(ROCR)
+library(tidyverse)
+library(mice)
+library(e1071)
+library(caret)
+```
+
+
+# Exploratory Data Analysis
+
+After setting up a virtual environment suitable for carrying out the scientific analysis, we load some useful packages to improve the capabilities of the analysis software. In particular, as suggested we load *ISLR*, *ISLR2*, *ROCR* and *tidyverse*. For the purposes of this research, we will also use *e1071*, *mice*, *caret*, 
+
+The first step in our analysis is to load the data contained in *chd.csv*. With the function *glimpse()* obtain an overview of the data.
+
+```{r}
+#| echo: false
+# Load the dataset
+data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/First Year/Second Semester/Stat mod/chd.csv", show_col_types = FALSE)
+
+# Print structure and a preview of the data
+glimpse(data)
+```
+
+From the output we observe that the variables sex and CHD are represented as character variables, while the remaining predictors are stored as double-precision numerical values (real numbers). This suggests that most of the variables are already in a format suitable for analysis, although the character variables may have to be converted to factors depending on the modelling approach.
+
+\newpage
+First of all, let us proceed with some basic checks on the data. The wise thing to do first is always to look for missing values. 
+
+```{r}
+#| echo: false
+# Missing values
+colSums(is.na(data))
+# ...
+```
+
+Since we have a small data set to use, we think it is best to use an imputator to replace the missing values with the actual expected values. We will now make the first copy of our data set, as we will apply two different imputation procedures to the two copies. We will then compare the future results of the analysis on these two different batches of data to see if one set of techniques worked better than the other. 
+
+We then create *data_simple*, where we impute missing values with basic metrics such as mean, median (if the data distribution is skewed) for continuous data and mode for the categorical ordinal *education*. We then copy the dataset into *data_mice*, a copy in which we will use more complex functions.
+
+```{r}
+#| echo: false
+# Create two copies of the dataset
+data_mice <- data
+data_simple <- data
+```
+
+Starting with the *simple_imputer()* function, we first want to evaluate the skewness of continuous numeric variables.
+
+```{r}
+#| echo: false
+# Compute skewness for the continuous variables
+skew_values <- sapply(data[, c("cpd", "chol", "BMI", "HR")], skewness, na.rm = TRUE)
+skew_values
+# ...
+```
+
+Using the rule of thumb, we can asses moderate skewness in all variables, except for *cpd*, which proves to be significantly skewed. Therefore, the median will be a preferable metric for imputing values. 
+
+For simplified imputations, we will use mode to complete missing values for *education*. Mode imputation is commonly used for the categorical variables but has some limitations. It is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. However, we will evaluate their impact by comparing the performance of this basic dataset with that imputed by a more advanced method.
+
+\newpage
+```{r}
+#| echo: false
+simple_imputer <- function(data) {
+  # Impute continuous variables with median
+  data$cpd[is.na(data$cpd)]   <- median(data$cpd, na.rm = TRUE)
+  data$chol[is.na(data$chol)] <- median(data$chol, na.rm = TRUE)
+  data$BMI[is.na(data$BMI)]   <- median(data$BMI, na.rm = TRUE)
+  data$HR[is.na(data$HR)]     <- median(data$HR, na.rm = TRUE)
+
+  # Impute education with mode
+  mode_edu <- as.numeric(names(which.max(table(data$education))))
+  data$education[is.na(data$education)] <- mode_edu
+
+  return(data)
+}
+
+# Apply the function to data_simple
+data_simple <- simple_imputer(data_simple)
+colSums(is.na(data_simple))
+```
+
+For complex imputation we use *mice* (Multivariate Imputation by Chained Equations). Mice has the ability to perform multiple imputations by actually predicting each variable with missing data, using the other variables as predictors (which is great because this mitigates the uncertainty of missing values). FORSE APPROFONDISCI FUNZIONI USATE!
+
+```{r}
+#| echo: false
+#| #| message: false
+#| warning: false
+#| results: 'hide'
+mice_imputer <- function(data) {
+  data$education <- factor(data$education, levels = 1:4, ordered = TRUE)
+
+  imp <- mice(data, m = 5, method = c(
+    "",      # sex
+    "",      # age
+    "polr",  # education
+    "",      # smoker
+    "pmm",   # cpd
+    "", "", "",        # stroke, HTN, diabetes
+    "pmm",             # chol
+    "",                # DBP
+    "pmm", "pmm",      # BMI, HR
+    ""                 # CHD
+  ), seed = 123)
+  return(complete(imp, 1))
+}
+data_mice <- mice_imputer(data_mice)
+```
+
+
+```{r}
+#| echo: false
+colSums(is.na(data_mice))
+```
+
+As before, R's output shows that the imputations occurred correctly. Now that we have handled the missing values well, we will analyze the nature of the response variable. 
+
+```{r}
+#| echo: false
+# Check distribution of CHD outcome 
+prop.table(table(data$CHD))
+```
+
+The output clearly shows that the response variable is strongly skewed toward the “No” class. This means that most observations do not have the event of interest (e.g., no coronary artery disease within 10 years). This has some implications for modeling, such as the fact that standard classifiers, e.g., logistic regression, will likely favor the most representative class, and perform poorly in making predictions about the minority class. Moreover, in this scenario, the Accurancy is misleading, since the prediction of the majority class alone would still provide high accuracy (e.g., 84%) even if all cases of the minority class were missing.
+
+In addition, we must prevent the random partitioning of data into a training and test set from leading to unbalanced sets where the true proportions of the sample are not actually represented correctly. To do this we use a technique called stratified sampling, which is aimed precisely at maintaining the proportions of the categories of a variable in both subsets of the sample. In practice, we will divide the sample into two groups filtered by the two categories of the response variable (in this case “yes” and “no”). These two groups are called *strata*. We then branch out some instances from the two groups and place them in our desired training or test set in a certain proportion (e.g., 70% of the instances in the training set and the other 30% in the test). This maintains the original proportion in both sets. In R, we use *caret::createDataPartition()* which is the function provided to do this.
+
+```{r}
+#| echo: false
+train_test_strata <- function(data) {
+  # Create stratified split (e.g., 70% training)
+  train_index <- createDataPartition(data$CHD, p = 0.7, list = FALSE)
+  
+  # Split the data
+  train_data <- data[train_index, ]
+  test_data  <- data[-train_index, ]
+
+  return(list(train = train_data, test = test_data))
+}
+
+# Apply to both datasets and unpack
+split_simple <- train_test_strata(data_simple)
+train_simple <- split_simple$train
+test_simple  <- split_simple$test
+
+split_mice <- train_test_strata(data_mice)
+train_mice <- split_mice$train
+test_mice  <- split_mice$test
+```
