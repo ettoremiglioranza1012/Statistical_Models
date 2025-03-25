@@ -18,17 +18,18 @@ library(ISLR)
 library(ISLR2)
 library(ROCR)
 library(tidyverse)
-library(mice)
 library(e1071)
 library(caret)
 library(corrplot)
 library(patchwork)
+library(class)  # k-NN backend
+
 ```
 
 
 # Exploratory Data Analysis
 
-After setting up a virtual environment suitable for carrying out the scientific analysis, we load some useful packages to improve the capabilities of the analysis software. In particular, as suggested we load *ISLR*, *ISLR2*, *ROCR* and *tidyverse*. For the purposes of this research, we will also use *e1071*, *mice*, *caret*, *corrplot*, *patchwork*
+After setting up a virtual environment suitable for carrying out the scientific analysis, we load some useful packages to improve the capabilities of the analysis software. In particular, as suggested we load *ISLR*, *ISLR2*, *ROCR* and *tidyverse*. For the purposes of this research, we will also use *e1071*, *caret*, *corrplot*, *patchwork*, *class*
 
 
 The first step in our analysis is to load the data contained in *chd.csv*. With the function *glimpse()* obtain an overview of the data.
@@ -44,6 +45,7 @@ glimpse(data)
 
 From the output we observe that the variables sex and CHD are represented as character variables, while the remaining predictors are stored as double-precision numerical values (real numbers). This suggests that most of the variables are already in a format suitable for analysis, although the character variables may have to be converted to factors depending on the modelling approach.
 
+
 \newpage
 First of all, let us proceed with some basic checks on the data. The wise thing to do first is always to look for missing values. 
 
@@ -51,32 +53,9 @@ First of all, let us proceed with some basic checks on the data. The wise thing 
 #| echo: false
 # Missing values
 colSums(is.na(data))
-# ...
 ```
 
-Since we have a small data set to use, we think it is best to use an imputator to replace the missing values with the actual expected values. We will now make a copy of our data set, as we will apply the imputer function.
-
-We then create *data_simple*, where we impute missing values with basic metrics such as mean, median (if the data distribution is skewed) for continuous data and mode for the categorical ordinal *education*. 
-
-```{r}
-#| echo: false
-# Create copy of the dataset
-data_simple <- data
-```
-
-Before we apply the *simple_imputer()* we first want to evaluate the skewness of continuous numeric variables.
-
-```{r}
-#| echo: false
-# Compute skewness for the continuous variables
-skew_values <- sapply(data[, c("cpd", "chol", "BMI", "HR")], skewness, na.rm = TRUE)
-skew_values
-# ...
-```
-
-We can asses moderate skewness in all variables, except for *cpd*, which proves to be significantly skewed. Therefore, the median will be a preferable metric for imputing values. 
-
-We will use mode to complete missing values for *education*. Mode imputation is commonly used for the categorical variables but has some limitations. It is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. The output below confirms that the missing values were correctly replaced by the imputer function. 
+Since we have a small data set to use, we think it is best to use an imputator to replace the missing values with the actual expected values. We will now make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with basic metrics such as mean, median (if the data distribution is skewed) for continuous data and mode for the categorical ordinal *education*.  Mode imputation is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. The output below confirms that the missing values were correctly replaced by the imputer function. 
 
 ```{r}
 #| echo: false
@@ -99,17 +78,12 @@ data_simple <- simple_imputer(data)
 colSums(is.na(data_simple))
 ```
 
-\newpage
- Now that we have handled the missing values, we will search for possible significant relationships between variables. For data exploration we'll plot only information from the data_simple() copy of the data. 
-
-The first step will be to draw a heat map of the Pearson correlation matrix between the variables. This will help us identify potential multicollinearity issues between predictors and assess the strength of linear relationships between each predictor and the response variable. Since correlation requires numerical inputs, the categorical variables *CHD* and *SEX* must first be converted into binary numerical variables (e.g., 1 = Yes, 0 = No). Once transformed, they can be included in the correlation matrix. From Figure 1, it can be seen that there are no strong linear relationships between the predictors and the response variable. The correlation with CHD is weak for all characteristics, with *AGE* (r = 0.23), *HTN* (r = 0.18) and *DBP* (r = 0.15) showing the highest associations. These weak positive correlations suggest limited linear discriminative power, although they could still contribute useful information in a multivariate model. As expected, positive correlations were also found between *SMOKER* and *CPD* (r = 0.77), *HNT* and *DBP* (r = 0.61), *DBP* and *BMI* (r = 0.38). This indicates potential multicollinearity, which should be monitored during model fitting, particularly in the context of regression analysis, where correlated predictors may inflate the variance in coefficient estimates and reduce interpretability.
-
-To further investigate the discriminatory power of continuous and categorical predictors, we examined the distributions of those variables that showed some correlation with CHD. Specifically, we used boxplots for continuous predictors and bar plots with proportions for categorical ones. As shown in Figures 2 and 3, the distribution of CHD cases varies across different levels of the predictors *AGE*, *DBP*, *HTN* and *SEX*,  providing additional visual evidence of a relationship between these variables and the response. These differences support the hypothesis that certain predictors may contribute useful information to CHD risk modeling. We care to 
+ Now that we have handled the missing values, we will search for possible significant relationships between variables. For data exploration we'll plot only information from the data_simple() copy of the data. The first step will be to draw a heat map of the Pearson correlation matrix between the variables. This will help us identify potential multicollinearity issues between predictors and assess the strength of linear relationships between each predictor and the response variable. Since correlation requires numerical inputs, the categorical variables *CHD* and *SEX* must first be converted into binary numerical variables (e.g., 1 = Yes, 0 = No). Once transformed, they can be included in the correlation matrix. From Figure 1, it can be seen that there are no strong linear relationships between the predictors and the response variable. The correlation with CHD is weak for all characteristics, with *AGE* (r = 0.23), *HTN* (r = 0.18) and *DBP* (r = 0.15) showing the highest associations. These weak positive correlations suggest limited linear discriminative power, although they could still contribute useful information in a multivariate model. As expected, positive correlations were also found between *SMOKER* and *CPD* (r = 0.77), *HNT* and *DBP* (r = 0.61), *DBP* and *BMI* (r = 0.38). This indicates potential multicollinearity, which should be monitored during model fitting, particularly in the context of regression analysis, where correlated predictors may inflate the variance in coefficient estimates and reduce interpretability.
 
 ```{r}
 #| echo: false
-#| fig.width: 6
-#| fig.height: 6
+#| fig.width: 5.5
+#| fig.height: 5.5
 #| fig.align: "center"
 #| fig.cap: "Correlation heatmap (including CHD)"
 # Create binary response: 1 = CHD Yes, 0 = No
@@ -130,6 +104,8 @@ corrplot(cor_matrix, method = "color", type = "upper",
          mar = c(0,0,1,0))
 ```
 
+To further investigate the discriminatory power of continuous and categorical predictors, we examined the distributions of those variables that showed some correlation with CHD. Specifically, we used boxplots for continuous predictors and bar plots with proportions for categorical ones. As shown in Figures 2 and 3, the distribution of CHD cases varies across different levels of the predictors *AGE*, *DBP*, *HTN* and *SEX*,  providing additional visual evidence of a relationship between these variables and the response. These differences support the hypothesis that certain predictors may contribute useful information to CHD risk modeling.
+
 
 \newpage
 ```{r}
@@ -146,8 +122,6 @@ p2 <- ggplot(data_simple, aes(x = CHD, y = DBP, fill = CHD)) +
 # Combine into one row
 (p1 | p2)
 ```
-
-
 
 ```{r}
 #| echo: false
@@ -206,7 +180,9 @@ prop.table(table(train_simple$CHD))
 prop.table(table(test_simple$CHD))
 ```
 
-\newpage
+
+### Logistic Regression Model
+
 We fit the following GLM model:
 \begin{equation*}
 \mbox{logit}(\mbox{E(CHD)}) = \beta_0 + \beta_1 \mbox{sex} + \beta_2 \mbox{age} + \beta_3 \mbox{education} + \ldots + \beta_{12} \mbox{HR}
@@ -214,7 +190,7 @@ We fit the following GLM model:
 ```{r}
 #| echo: false
 # Convert CHD and sex to factors if not already
-data_glm <- data_simple %>%
+data_glm <- train_simple %>%
   mutate(
     CHD = factor(CHD, levels = c("No", "Yes")),
     sex = factor(sex)
@@ -229,4 +205,109 @@ glm_fit <- glm(CHD ~ sex + age + education + smoker + cpd + stroke + HTN +
 summary(glm_fit)
 ```
 
-The output represent the fitted logistic regression model, in which we estimate the log-odds of developing *CHD* as a function of an intercept and 12 predictor variables. The intercept (-7.597) represents the log-odds of developing *CHD* for an individual belonging to all the reference categories—such as being male, having the lowest education level, not smoking, and having no history of stroke, hypertension, or diabetes. Its strongly negative value reflects a very low baseline likelihood of developing *CHD* in this group. The estimated coefficient for *SEX* is positive and highly significant, indicating that, all else being equal, males have a higher log-odds of developing CHD compared to females. *AGE* is also highly significant, with each additional year increasing the log-odds of developing CHD by 0.07032. In terms of the odds ratio, exp(0.07032) is approximately 1.072, indicating that each extra year of *AGE* raises the odds of developing CHD by about 7%. The variable *CPD* (cigarettes per day) is highly significant, whereas smoking status itself is not. This may suggest that the intensity of smoking provides more meaningful information about the risk of developing CHD than simply whether someone smokes or not.
+
+### Interpretation of the Logistic Regression Model
+
+The output summarizes the results of a fitted *logistic regression model* estimating the log-odds of developing *CHD* as a function of an intercept and 12 predictor variables. The estimated *Intercept* (-7.597) represents the log-odds of developing *CHD* for individuals in all reference categories (e.g., female, no high school degree, non-smoker, no history of stroke, hypertension, or diabetes). Its strongly negative value reflects a very low baseline probability of developing *CHD* in this subgroup. The coefficient for *sexMale* (0.440) is positive and highly significant (p < 0.001), suggesting that, all else equal, males have a higher risk of developing *CHD* than females. Similarly, *age* (0.0703) is highly significant, with each additional year increasing the log-odds of *CHD*; the corresponding odds ratio is exp(0.0703) = 1.072, indicating a 7.2% increase in odds per year of age. The variable *cpd* (cigarettes per day) is significant (p < 0.001), while *smoker* status is not. This implies that smoking intensity may be more predictive of *CHD* risk than smoking status alone. A history of *stroke* (1.023) is statistically significant (p = 0.02), with an odds ratio of approximately exp(1.023) = 2.78. This indicates that individuals with prior strokes have nearly three times the odds of developing *CHD*. Similarly, *HTN* (hypertension) and *diabetes* are both highly significant, with odds ratios of about 1.55 and 2.36, respectively. The variable *chol* (cholesterol) has a small but borderline significant effect (p = 0.046). Although the per-unit increase has a minor effect on risk, extremely high cholesterol values could meaningfully affect *CHD* probability. *DBP* (diastolic blood pressure) is significant (p = 0.006), with an odds ratio of exp(0.0129) = 1.013, meaning that each mmHg increase in diastolic pressure is associated with a 1.3% increase in *CHD* odds. By contrast, *education*, *smoker*, *BMI*, and *HR* are not statistically significant in this model, indicating that they may not provide additional predictive value for *CHD* in the presence of the other variables.
+
+### K-NN Classifier
+Since we know that models based on clustering perform poorly with features with different scale, before the fitting process we standardize all the continuos variable. Without standardization, features like cholesterol or age might dominate the distance metric simply due to larger numeric ranges. We extract the mean and s.d. from the train set, and we use them to standardize both the train and test set. After this, we follow this procedure to fit a *K-NN* model: we set up a training control with a 5-fold Cross Validation, we apply grid search to fine tune the k parameter (the tuning grid for k will be *[5,30]*) and finally we fit the model after setting the seed to *42*. We produce an output showing the best value of k and the accurancy result.
+
+```{r}
+#| echo: false
+# Continuous variables to scale
+cont_vars <- c("age", "cpd", "chol", "DBP", "BMI", "HR")
+train_scaled <- train_simple
+test_scaled <- test_simple
+
+# Compute mean and sd from training set
+train_means <- apply(train_simple[cont_vars], 2, mean)
+train_sds   <- apply(train_simple[cont_vars], 2, sd)
+
+# Standardize training set
+train_scaled[cont_vars] <- scale(train_simple[cont_vars])
+
+# Standardize test set using train parameters
+test_scaled[cont_vars] <- sweep(test_simple[cont_vars], 2, train_means, "-")
+test_scaled[cont_vars] <- sweep(test_scaled[cont_vars], 2, train_sds, "/")
+```
+
+
+```{r}
+#| echo: false
+# Set up training control with 5-fold CV
+ctrl <- trainControl(method = "cv", number = 5)
+
+# Define tuning grid for k (number of neighbors)
+k_grid <- expand.grid(k = 5:30)
+
+# Fit the k-NN model
+set.seed(42)
+knn_model <- train(
+  CHD ~ ., 
+  data = train_scaled,
+  method = "knn",
+  tuneGrid = k_grid,
+  trControl = ctrl
+)
+# Show best value of k and accuracy results
+# Extract best k and corresponding accuracy
+best_k <- knn_model$bestTune$k
+best_acc <- knn_model$results %>% 
+  filter(k == best_k) %>% 
+  pull(Accuracy)
+
+# Print summary
+cat("Highest accuracy of", round(best_acc, 4), " with k =", best_k, ".\n")
+```
+
+
+### Performance evalutation
+
+The next step is to evaluate the models. Given the nature of the response variable, it is clear that *accuracy* alone is not an appropriate evaluation metric. In particular, since this is a medical study, we are especially concerned with not missing high-risk patients, while we are more tolerant of issuing a false alarm. In this context, a more meaningful evaluation metric is the *FNR* (False Negative Rate), which measures the proportion of patients who developed *CHD* but were not identified by the system. 
+The *FNR* is defined as:
+
+$$
+\text{FNR} = \frac{\text{FN}}{\text{FN} + \text{TP}} = 1 - \text{Sensitivity}
+$$
+
+We produce the confusion matricies of both models to extract this metric:
+
+```{r}
+#| echo: false
+
+# Ensure CHD is a factor in test sets
+test_simple$CHD <- factor(test_simple$CHD, levels = c("No", "Yes"))
+test_scaled$CHD <- factor(test_scaled$CHD, levels = c("No", "Yes"))
+
+# --- Logistic Regression ---
+glm_probs <- predict(glm_fit, newdata = test_simple, type = "response")
+glm_preds <- factor(ifelse(glm_probs > 0.5, "Yes", "No"), levels = c("No", "Yes"))
+
+glm_cm <- table(LR = glm_preds, Actual = test_simple$CHD)
+print(glm_cm)
+
+# Accuracy and FNR
+accuracy_glm <- mean(glm_preds == test_simple$CHD)
+fnr_glm <- glm_cm["No", "Yes"] / sum(glm_cm[ , "Yes"])
+
+cat("Logistic Regression Accuracy:", round(accuracy_glm, 4), "\n")
+cat("Logistic Regression FNR:", round(fnr_glm, 4), "\n\n")
+
+# --- k-NN ---
+knn_preds <- predict(knn_model, newdata = test_scaled)
+knn_cm <- table(KNN = knn_preds, Actual = test_scaled$CHD)
+print(knn_cm)
+
+# Accuracy and FNR
+accuracy_knn <- mean(knn_preds == test_scaled$CHD)
+fnr_knn <- knn_cm["No", "Yes"] / sum(knn_cm[ , "Yes"])
+
+cat("k-NN Accuracy:", round(accuracy_knn, 4), "\n")
+cat("k-NN FNR:", round(fnr_knn, 4), "\n")
+```
+
+### Conclusion
+
+In conclusion, the two models exhibit comparable performance in terms of overall *accuracy*. However, considering the metric of primary interest—the *False Negative Rate (FNR)*—the *logistic regression* model outperforms *k-NN*. Specifically, the *k-NN* model fails to correctly identify any true positive cases, misclassifying all actual *CHD* cases as negative. Although the *logistic regression* model also demonstrates a high false negative rate, incorrectly classifying approximately 96% of the true positives, it nonetheless provides a modest improvement over *k-NN* in identifying high-risk patients.
+Consequently, in an application where correctly identifying the minority class is crucial, *logistic regression* appears to be the more suitable model. The first limitation we wish to address concerns some missing values that were present in the dataset and were handled by simple imputation techniques. However, if the mechanism of missingness is not well captured by the distribution of the observed data, this may introduce bias into the analysis. Secondly, a major limitation is the imbalance in the outcome variable: approximately 85% of the observations correspond to the absence of *CHD*. This imbalance can lead the models to favor the majority class, thereby increasing the risk of overlooking high-risk individuals.Another limitation relates to potential multicollinearity among predictors, as correlations between key variables may distort coefficient estimates and reduce model interpretability. Additionally, some predictors, such as *diabetes*, occur infrequently in the dataset. This low prevalence can result in unstable coefficient estimates and limit the variable’s discriminative power. Finally, the dataset may omit relevant risk factors such as dietary habits, alcohol consumption, physical activity, or genetic predisposition. The absence of these variables could reduce the predictive accuracy of the models and overlook important contributors to *CHD* risk.
