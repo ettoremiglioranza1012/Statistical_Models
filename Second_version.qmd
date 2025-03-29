@@ -40,7 +40,7 @@ data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/Fir
 colSums(is.na(data))
 ```
 
-Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with basic metric of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. 
+Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with basic metric of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally used when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. In our case, the number of missing values is small, so it is a reasonable choice. 
 
 ```{r}
 #| echo: true
