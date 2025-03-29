@@ -23,7 +23,7 @@ library(patchwork)
 library(class)  # k-NN backend
 ```
 
-Library used: *ISLR*, *ISLR2*, *ROCR*, *tidyverse*, *caret*, *patchwork*, *class*. Firstly, load the data contained in *chd.csv*. With *glimpse()* obtain an overview of the data. We conclude that *sex* and *CHD* stored as character variables, while the remaining predictors are in double-precision numeric format. Character variables may have to be converted to factors depending on the modelling approach. Next, we search for missing values. 
+Library used: *ISLR*, *ISLR2*, *ROCR*, *tidyverse*, *caret*, *patchwork*, *class*. Firstly, load the data contained in *chd.csv*. With *glimpse()* obtain an overview of the data. We conclude that *sex* and *CHD* are stored as character variables, while the remaining predictors are in double-precision numeric format. Character variables may have to be converted to factors depending on the modelling approach. Next, we search for missing values. 
 
 ```{r}
 #| echo: false
@@ -40,7 +40,7 @@ data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/Fir
 colSums(is.na(data))
 ```
 
-Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with basic metric of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally used when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. In our case, the number of missing values is small, so it is a reasonable choice. 
+Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with the basic metrics of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally used when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. In our case, the number of missing values is small, so it is a reasonable choice. 
 
 ```{r}
 #| echo: true
@@ -132,7 +132,7 @@ b3 <- ggplot(data_simple, aes(x = factor(diabetes), fill = factor(CHD))) +
 
 ```
 
-We proceed with the analysis of the nature of the response variable. Since the response variable is categorical and binary we want to assess the level of balance of the two categories by computing the proportions.
+We proceed with the analysis of the nature of the response variable. Since the response variable is categorical and binary we want to assess the level of balance of the two categories by computing their proportions.
 
 ```{r}
 #| echo: false
@@ -213,15 +213,15 @@ glm_fit <- glm(CHD ~ sex + age + education + smoker + cpd + stroke + HTN +
 
 The output summarizes a **logistic regression model** estimating the **log-odds** of developing **CHD** based on 12 predictors. The **Intercept (-7.491)** represents the log-odds for individuals in the reference categories (female, lowest education level, non-smoker, no stroke, no hypertension, no diabetes), indicating a **very low baseline probability** of CHD.
 
-- **Sex (Male = 0.497)** is **highly significant** (p < 0.001); males have higher odds of CHD. Odds ratio: `exp(0.497) = 1.64`.
+- **Sex (Male = 0.497)** is **highly significant** (p < 0.001); males have higher odds of CHD. Odds ratio: `exp(0.497) ~ 1.64`.
 - **Age (0.066)** is **significant** (p < 0.001); each additional year increases CHD odds by ~6.8%.
 - **Education (0.0143)** is **not significant** (p = 0.791); it has little effect on CHD risk.
-- **Smoker status (-0.099)** is **not significant**, but **cpd (0.0216)** is **significant** (p = 0.001), indicating smoking intensity is more predictive. Odds ratio: `exp(0.0216) = 1.022`.
-- **Stroke (0.967)** is **marginally significant** (p = 0.070), with individuals having over **2.6 times the odds** of CHD.
-- **HTN (0.446)** is **significant** (p = 0.0015), raising CHD odds by 56%.
+- **Smoker status (-0.099)** is **not significant**, but **cpd (0.0216)** is **significant** (p = 0.001), indicating smoking intensity is more predictive. Odds ratio: `exp(0.0216) ~ 1.022`.
+- **Stroke (0.967)** is **marginally significant** (p = 0.070), with individuals having stroke history over **2.6 times the odds** of CHD.
+- **HTN (0.446)** is **significant** (p = 0.0015), raising CHD odds by ~56%.
 - **Diabetes (1.089)** is **highly significant** (p < 0.001); diabetics have nearly **three times the odds** of CHD.
 - **Cholesterol (0.00194)** is **not significant** (p = 0.104), suggesting a weak effect.
-- **DBP (0.0148)** is **significant** (p = 0.0069); each mmHg increase raises CHD odds by 1.5%.
+- **DBP (0.0148)** is **significant** (p = 0.0069); each mmHg increase raises CHD odds by ~1.5%.
 - **BMI (-0.0071)** and **HR (0.0024)** are **not significant**, indicating minimal predictive power.
 
 Overall, variables like sex, age, cpd, stroke, HTN, diabetes, and DBP show meaningful associations with CHD, while others contribute little when adjusting for these effects.

@@ -1,7 +1,0 @@
-
-# To use:
-
-```{r}
-#| echo: false
-
-```
