@@ -1,0 +1,356 @@
+---
+title: "Statistical Homework 1"
+subtitle: "Miglioranza Ettore"
+format: pdf
+---
+
+```{r}
+#| label: setup
+#| include: false
+#| warning: false
+#| message: false
+#| tidy: true
+#| tidy.opts:
+#|   width.cutoff: 80
+
+# Load required libraries
+library(ISLR)
+library(ISLR2)
+library(ROCR)
+library(tidyverse)
+library(caret)
+library(patchwork)
+library(class)  # k-NN backend
+```
+
+Library used: *ISLR*, *ISLR2*, *ROCR*, *tidyverse*, *caret*, *patchwork*, *class*. Firstly, load the data contained in *chd.csv*. With *glimpse()* obtain an overview of the data. We conclude that *sex* and *CHD* stored as character variables, while the remaining predictors are in double-precision numeric format. Character variables may have to be converted to factors depending on the modelling approach. Next, we search for missing values. 
+
+```{r}
+#| echo: false
+# Load the dataset
+data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/First Year/Second Semester/Stat mod/HWs_Directory/chd.csv", show_col_types = FALSE)
+
+# Print structure and a preview of the data
+#glimpse(data)
+```
+
+```{r}
+#| echo: false
+# Missing values
+colSums(is.na(data))
+```
+
+Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with basic metric of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally reasonable when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. However, mode imputation ignores the ordinal nature of the variable and does not take into account potential correlations with other variables. In our case, the number of missing values is small, so these limitations are unlikely to significantly affect the results. 
+
+```{r}
+#| echo: true
+simple_imputer <- function(data) {
+  # Impute continuous variables with median
+  data$cpd[is.na(data$cpd)]   <- median(data$cpd, na.rm = TRUE)
+  data$chol[is.na(data$chol)] <- median(data$chol, na.rm = TRUE)
+  data$BMI[is.na(data$BMI)]   <- median(data$BMI, na.rm = TRUE)
+  data$HR[is.na(data$HR)]     <- median(data$HR, na.rm = TRUE)
+  # Impute education with mode
+  mode_edu <- as.numeric(names(which.max(table(data$education))))
+  data$education[is.na(data$education)] <- mode_edu
+  return(data)
+}
+data_simple <- simple_imputer(data)
+```
+
+Now that we have handled the missing values, we proceed to investigate potential significant relationships between variables. For this exploratory phase, we will analyze only the *data_simple* version of the dataset. To assess the discriminatory power of both continuous and categorical predictors, we examine their distributions across the different levels of the response variable (CHD). Specifically, we use boxplots for continuous variables and proportion-based bar plots for categorical ones. As shown in Figures 2 and 3, the distribution of *CHD* cases differ across various levels of predictors such as *Age*, *DBP*, *cpd*, *HTN*, *Sex* and *diabetes*. These visual differences provide preliminary evidence of a relationship between these predictors and the *CHD* outcome, supporting the hypothesis that they may contribute valuable information for *CHD* risk modeling.
+
+\vspace{1cm}
+
+```{r}
+#| echo: false
+#| fig-cap: "Distribution of continuous predictors by CHD status"
+#| fig-width: 8
+#| fig-height: 5
+
+# Boxplots
+p1 <- ggplot(data_simple, aes(x = factor(CHD, labels = c("No", "Yes")), y = age, fill = factor(CHD))) +
+  geom_boxplot() +
+  labs(title = "Age", x = "CHD Status", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p2 <- ggplot(data_simple, aes(x = factor(CHD, labels = c("No", "Yes")), y = DBP, fill = factor(CHD))) +
+  geom_boxplot() +
+  labs(title = "DBP", x = "CHD Status", y = "Diastolic BP") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p3 <- ggplot(data_simple, aes(x = factor(CHD, labels = c("No", "Yes")), y = cpd, fill = factor(CHD))) +
+  geom_boxplot() +
+  labs(title = "Cpd", x = "CHD Status", y = "CPD") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+(p1 | p2 | p3)
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "CHD proportions by hypertension, sex, and diabetes status"
+
+# Common CHD fill aesthetic
+chd_fill <- scale_fill_manual(values = c("#F8766D", "#00BFC4"), name = "CHD", labels = c("No", "Yes"))
+
+# Plot 1: HTN
+b1 <- ggplot(data_simple, aes(x = factor(HTN), fill = factor(CHD))) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_discrete(labels = c("0" = "No HTN", "1" = "HTN")) +
+  labs(title = "CHD-HTN", x = "Hypertension", y = "Proportion") +
+  chd_fill +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 2: Sex
+b2 <- ggplot(data_simple, aes(x = factor(sex), fill = factor(CHD))) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  labs(title = "CHD-Sex", x = "Sex", y = "Proportion") +
+  chd_fill +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 3: Diabetes
+b3 <- ggplot(data_simple, aes(x = factor(diabetes), fill = factor(CHD))) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_discrete(labels = c("0" = "No D.", "1" = "D.")) +
+  labs(title = "CHD-Diab", x = "Diabetes", y = "Proportion") +
+  chd_fill +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Add legend to just one plot (bottom), align the three horizontally
+(b1 | b2 | b3) + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+
+```
+
+We proceed with the analysis of the nature of the response variable. Since the response variable is categorical and binary we want to assess the level of balance of the two categories by computing the proportions.
+
+```{r}
+#| echo: false
+# Check distribution of CHD outcome 
+prop.table(table(data$CHD))
+```
+
+The response variable is clearly imbalanced, with the majority of observations classified as “No” for CHD, meaning most individuals do not experience coronary heart disease within 10 years. This imbalance has important modeling implications—standard classifiers like logistic regression tend to favor the majority class, which can result in poor prediction performance on the minority class. In such cases, accuracy becomes a misleading evaluation metric, since predicting only the majority class can still yield a high overall accuracy (e.g., 84%) while missing all true positives. To ensure that the imbalance does not distort the training and test sets, we use **stratified sampling**, which maintains the original class proportions in both subsets. This is achieved in R using `caret::createDataPartition()` with a 70/30 split and a fixed seed (`42`). The resulting distributions closely match the full dataset: approximately 85% “No” and 15% “Yes” in both training and test sets.
+
+```{r}
+#| echo: true
+set.seed(42)
+train_test_strata <- function(data) {
+  # Create stratified split (e.g., 70% training)
+  train_index <- createDataPartition(data$CHD, p = 0.7, list = FALSE)
+  
+  # Split the data
+  train_data <- data[train_index,]
+  test_data  <- data[-train_index,]
+
+  return(list(train = train_data, test = test_data))
+}
+
+# Apply to both datasets and unpack
+split_simple <- train_test_strata(data_simple)
+train_simple <- split_simple$train
+test_simple  <- split_simple$test
+```
+
+```{r}
+#| echo: false
+#prop.table(table(train_simple$CHD))
+#prop.table(table(test_simple$CHD))
+```
+
+## Logistic Regression Model
+
+We fit the following GLM model:
+\begin{equation*}
+\mbox{logit}(\mbox{E(CHD)}) = \beta_0 + \beta_1 \mbox{sex} + \beta_2 \mbox{age} + \beta_3 \mbox{education} + \ldots + \beta_{12} \mbox{HR}
+\end{equation*}
+
+```{r}
+#| echo: false
+# Convert CHD and sex to factors if not already
+set.seed(42)
+data_glm <- train_simple %>%
+  mutate(
+    CHD = factor(CHD, levels = c("No", "Yes")),
+    sex = factor(sex)
+  )
+
+# Fit full logistic regression model
+glm_fit <- glm(CHD ~ sex + age + education + smoker + cpd + stroke + HTN +
+                 diabetes + chol + DBP + BMI + HR,
+               data = data_glm, family = binomial)
+```
+
+### Table 1: Logistic Regression Results
+
+| Predictor   | Estimate | Std. Error | z value | Pr(>|z|) | Significance |
+|-------------|----------|------------|---------|----------|--------------|
+| (Intercept) | -7.4911  | 0.7688     | -9.744  | < 2e-16   | ***          |
+| sexMale     | 0.4967   | 0.1176     | 4.225   | 2.39e-05  | ***          |
+| age         | 0.0661   | 0.0071     | 9.341   | < 2e-16   | ***          |
+| education   | 0.0143   | 0.0541     | 0.265   | 0.7908    |              |
+| smoker      | -0.0987  | 0.1694     | -0.583  | 0.5599    |              |
+| cpd         | 0.0216   | 0.0067     | 3.227   | 0.00125   | **           |
+| stroke      | 0.9674   | 0.5347     | 1.809   | 0.0704    | .            |
+| HTN         | 0.4457   | 0.1404     | 3.174   | 0.00150   | **           |
+| diabetes    | 1.0892   | 0.2447     | 4.451   | 8.53e-06  | ***          |
+| chol        | 0.0019   | 0.0012     | 1.625   | 0.1042    |              |
+| DBP         | 0.0148   | 0.0055     | 2.701   | 0.00692   | **           |
+| BMI         | -0.0071  | 0.0142     | -0.505  | 0.6136    |              |
+| HR          | 0.0024   | 0.0046     | 0.523   | 0.6013    |              |
+
+### Interpretation of the Logistic Regression Model
+
+The output summarizes a **logistic regression model** estimating the **log-odds** of developing **CHD** based on 12 predictors. The **Intercept (-7.491)** represents the log-odds for individuals in the reference categories (female, lowest education level, non-smoker, no stroke, no hypertension, no diabetes), indicating a **very low baseline probability** of CHD.
+
+- **Sex (Male = 0.497)** is **highly significant** (p < 0.001); males have higher odds of CHD. Odds ratio: `exp(0.497) = 1.64`.
+- **Age (0.066)** is **significant** (p < 0.001); each additional year increases CHD odds by ~6.8%.
+- **Education (0.0143)** is **not significant** (p = 0.791); it has little effect on CHD risk.
+- **Smoker status (-0.099)** is **not significant**, but **cpd (0.0216)** is **significant** (p = 0.001), indicating smoking intensity is more predictive. Odds ratio: `exp(0.0216) = 1.022`.
+- **Stroke (0.967)** is **marginally significant** (p = 0.070), with individuals having over **2.6 times the odds** of CHD.
+- **HTN (0.446)** is **significant** (p = 0.0015), raising CHD odds by 56%.
+- **Diabetes (1.089)** is **highly significant** (p < 0.001); diabetics have nearly **three times the odds** of CHD.
+- **Cholesterol (0.00194)** is **not significant** (p = 0.104), suggesting a weak effect.
+- **DBP (0.0148)** is **significant** (p = 0.0069); each mmHg increase raises CHD odds by 1.5%.
+- **BMI (-0.0071)** and **HR (0.0024)** are **not significant**, indicating minimal predictive power.
+
+Overall, variables like sex, age, cpd, stroke, HTN, diabetes, and DBP show meaningful associations with CHD, while others contribute little when adjusting for these effects.
+
+## K-NN Classifier 
+
+Since we know that models based on clustering perform poorly with features on different scales, we standardize all continuous variables before the fitting process. Without standardization, features like *cholesterol* or *age* could dominate the distance metric simply due to their larger numeric ranges. We extract the mean and standard deviation from the training set and use them to standardize both the training and test sets. After this, we follow the procedure below to fit a K-NN model: set up a training control with 5-fold, cross-validation, apply grid search to fine-tune the k parameter (using a tuning grid from k = 5 to k = 30) and fit the model on the standardized data. We evaluate model performance using the accuracy metric, selecting the value of k that yields the highest cross-validated accuracy.
+
+```{r}
+#| echo: false
+# Continuous variables to scale
+set.seed(42)
+cont_vars <- c("age", "cpd", "chol", "DBP", "BMI", "HR")
+train_scaled <- train_simple
+test_scaled <- test_simple
+
+# Compute mean and sd from training set
+train_means <- apply(train_simple[cont_vars], 2, mean)
+train_sds   <- apply(train_simple[cont_vars], 2, sd)
+
+# Standardize training set
+train_scaled[cont_vars] <- scale(train_simple[cont_vars])
+
+# Standardize test set using train parameters
+test_scaled[cont_vars] <- sweep(test_simple[cont_vars], 2, train_means, "-")
+test_scaled[cont_vars] <- sweep(test_scaled[cont_vars], 2, train_sds, "/")
+```
+
+```{r}
+#| echo: true
+# Set up training control with 5-fold CV
+ctrl <- trainControl(method = "cv", number = 5)
+# Define tuning grid for k (number of neighbors)
+k_grid <- expand.grid(k = 5:30)
+# Fit the k-NN model
+set.seed(42)
+knn_model <- train(CHD ~ ., data = train_scaled, method = "knn", 
+                    tuneGrid = k_grid, trControl = ctrl)
+```
+
+```{r}
+#| echo: false 
+# Show best value of k and accuracy results
+# Extract best k and corresponding accuracy
+best_k <- knn_model$bestTune$k
+best_acc <- knn_model$results %>% 
+  filter(k == best_k) %>% 
+  pull(Accuracy)
+
+# Print summary
+cat("Highest accuracy of", round(best_acc, 4), " with k =", best_k, ".\n")
+```
+
+## Performance evaluation
+
+The next step is to evaluate the models. Given the nature of the response variable, it is clear that *accuracy* alone is not an appropriate evaluation metric. In particular, since this is a medical study, we are especially concerned with not missing high-risk patients, while we are more tolerant of issuing a false alarm. In this context, a more meaningful evaluation metric is the *FNR* (False Negative Rate), which measures the proportion of patients who developed *CHD* but were not identified by the system. 
+The *FNR* is defined as:
+
+$$
+\text{FNR} = \frac{\text{FN}}{\text{FN} + \text{TP}} = 1 - \text{Sensitivity}
+$$
+
+### Logistic Regression metrics:
+
+```{r}
+#| echo: false
+# Ensure factor levels are correct
+test_simple$CHD <- factor(test_simple$CHD, levels = c("No", "Yes"))
+# Predict probabilities and classes
+glm_probs_test <- predict(glm_fit, newdata = test_simple, type = "response")
+glm_preds_test <- factor(ifelse(glm_probs_test > 0.5, "Yes", "No"), levels = c("No", "Yes"))
+# Confusion matrix and metrics
+glm_cm <- confusionMatrix(glm_preds_test, test_simple$CHD, positive = "Yes")
+accuracy_glm <- glm_cm$overall["Accuracy"]
+sensitivity_glm <- glm_cm$byClass["Sensitivity"]
+specificity_glm <- glm_cm$byClass["Specificity"]
+fnr_glm <- 1 - sensitivity_glm
+cat("Accuracy:", round(accuracy_glm, 4), "Sensitivity:", round(sensitivity_glm, 4), "Specificity:", round(specificity_glm, 4), "FNR:", round(fnr_glm, 4))
+```
+
+### K-NN metrics:
+
+```{r}
+#| echo: false
+# Ensure CHD is a factor
+test_scaled$CHD <- factor(test_scaled$CHD, levels = c("No", "Yes"))
+# Predict probabilities and classes
+knn_probs_test <- predict(knn_model, newdata = test_scaled, type = "prob")[, "Yes"]
+knn_preds_test <- predict(knn_model, newdata = test_scaled)
+# Confusion matrix and metrics
+knn_cm <- confusionMatrix(knn_preds_test, test_scaled$CHD, positive = "Yes")
+accuracy_knn <- knn_cm$overall["Accuracy"]
+sensitivity_knn <- knn_cm$byClass["Sensitivity"]
+specificity_knn <- knn_cm$byClass["Specificity"]
+fnr_knn <- 1 - sensitivity_knn
+cat("Accuracy:", round(accuracy_knn, 4), "Sensitivity:", round(sensitivity_knn, 4), "Specificity:", round(specificity_knn, 4), "FNR:", round(fnr_knn, 4))
+```
+
+The logistic regression is strongly skewed towards the prediction of the majority class (‘No CHD’) due to the imbalance. Although it performs slightly better than chance (as reflected in the AUC), it struggles with the minority class. On the other hand, k-NN can preserve accuracy through correct classification of the dominant class, but it is entirely incapable of detecting minority-class cases without further balancing strategies.
+
+```{r}
+#| echo: false
+#| fig-cap: "ROC AUC Logistic regression vs. K-NN"
+# ROC Curve
+pred_logit <- prediction(glm_probs_test, test_simple$CHD)
+perf_logit <- performance(pred_logit, "tpr", "fpr")
+auc_logit <- performance(pred_logit, "auc")@y.values[[1]]
+
+pred_knn <- prediction(knn_probs_test, test_scaled$CHD)
+perf_knn <- performance(pred_knn, "tpr", "fpr")
+auc_knn <- performance(pred_knn, "auc")@y.values[[1]]
+
+# Plot both ROC curves for comparison
+plot(perf_logit, col = "blue", lwd = 2, main = "ROC Curve Comparison")
+plot(perf_knn, col = "red", lwd = 2, add = TRUE)
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+legend("bottomright", 
+       legend = c(
+         paste("Logistic AUC =", round(auc_logit, 3)),
+         paste("k-NN AUC =", round(auc_knn, 3))
+       ),
+       col = c("blue", "red"),
+       lwd = 2)
+```
+
+
+## Conclusion
+
+In conclusion, the two models exhibit comparable performance in terms of overall *accuracy*. However, considering the metric of primary interest—the *False Negative Rate (FNR)*—the *logistic regression* model outperforms *k-NN*. Specifically, the *k-NN* model fails to correctly identify any true positive cases, misclassifying all actual *CHD* cases as negative. Although the *logistic regression* model also demonstrates a high false negative rate, incorrectly classifying approximately 96% of the true positives, it nonetheless provides a modest improvement over *k-NN* in identifying high-risk patients. Consequently, in an application where correctly identifying the minority class is crucial, *logistic regression* appears to be the more suitable model. 
+
+The first limitation we wish to address concerns some missing values that were present in the dataset and were handled by simple imputation techniques. However, if the mechanism of missingness is not well captured by the distribution of the observed data, this may introduce bias into the analysis. Secondly, a major limitation is the imbalance in the outcome variable: approximately 85% of the observations correspond to the absence of *CHD*. This imbalance can lead the models to favor the majority class, thereby increasing the risk of overlooking high-risk individuals. Another limitation relates to potential multicollinearity among predictors, as correlations between key variables may distort coefficient estimates and reduce model interpretability (e.g. cigarettes per day for smoker and diastolic blood pressure for hypertension). Finally, the dataset may omit relevant risk factors such as dietary habits, alcohol consumption, physical activity, or genetic predisposition. The absence of these variables could reduce the predictive accuracy of the models and overlook important contributors to *CHD* risk.
