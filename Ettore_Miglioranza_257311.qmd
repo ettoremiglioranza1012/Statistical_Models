@@ -20,10 +20,13 @@ library(ROCR)
 library(tidyverse)
 library(caret)
 library(patchwork)
+library(kableExtra)
 library(class)  # k-NN backend
+library(smotefamily)
+library(e1071)
 ```
 
-Library used: *ISLR*, *ISLR2*, *ROCR*, *tidyverse*, *caret*, *patchwork*, *class*. Firstly, load the data contained in *chd.csv*. With *glimpse()* obtain an overview of the data. We conclude that *sex* and *CHD* are stored as character variables, while the remaining predictors are in double-precision numeric format. Character variables may have to be converted to factors depending on the modelling approach. Next, we search for missing values. 
+Firstly, load the data contained in *chd.csv*. With *summary()* obtain an overview of the data. We conclude that *sex* and *CHD* are stored as character variables, while the remaining predictors are in double-precision numeric format. Character variables may have to be converted to factors depending on the modelling approach. Next, we search for missing values. 
 
 ```{r}
 #| echo: false
@@ -36,8 +39,9 @@ data <- read_csv("C:/Users/ettor/OneDrive/Documenti/UNITN - MAGISTRALE/CORSI/Fir
 
 ```{r}
 #| echo: false
-# Missing values
-colSums(is.na(data))
+summary(data) %>%
+  kable(format = 'latex', booktabs=TRUE, caption = 'Summary of the Dataset') %>%
+  kable_styling(latex_options = c('HOLD_position', 'scale_down', 'striped'))
 ```
 
 Since we have a small data set to use, we think it is best to use an imputer to replace the missing values with the expected values. We make a copy of our data set, *data_simple*, on which we will apply the imputer function. We impute missing values with the basic metrics of the median for continuous data and mode for the ordinal categorical variable, *education*.  Mode imputation is generally used when the distribution is highly imbalanced and the number of missing values is relatively small, making it acceptable to substitute with the most frequent category. In our case, the number of missing values is small, so it is a reasonable choice. 
@@ -351,6 +355,103 @@ legend("bottomright",
 
 ## Conclusion
 
-In conclusion, the two models exhibit comparable performance in terms of overall *accuracy*. However, considering the metric of primary interest—the *False Negative Rate (FNR)*—the *logistic regression* model outperforms *k-NN*. Specifically, the *k-NN* model fails to correctly identify any true positive cases, misclassifying all actual *CHD* cases as negative. Although the *logistic regression* model also demonstrates a high false negative rate, incorrectly classifying approximately 96% of the true positives, it nonetheless provides a modest improvement over *k-NN* in identifying high-risk patients. Consequently, in an application where correctly identifying the minority class is crucial, *logistic regression* appears to be the more suitable model. 
+The two models show comparable performance in terms of overall *accuracy*, but focusing on the *False Negative Rate (FNR)*—a key metric in medical applications—*logistic regression* outperforms *k-NN*, which fails to detect any true positives. Despite still exhibiting a high FNR, the logistic model offers a modest improvement in identifying high-risk patients. However, using classification models without explicitly addressing class imbalance is suboptimal. To improve performance in such contexts, it is essential to incorporate techniques such as resampling, penalisation for misclassifying the minority class, threshold adjustments that favor sensitivity, or asymmetric cost functions. The analysis is also subject to several limitations. Firstly, missing values were handled using simple imputation, which could introduce bias if the missingness mechanism is not random. Secondly, as previously discussed, the outcome variable is highly imbalanced, with approximately 85% of observations corresponding to the absence of *CHD*, leading to a tendency for models to favor the majority class. Additionally, potential multicollinearity among predictors may distort coefficient estimates and reduce model interpretability. Lastly, the dataset lacks relevant features such as dietary habits, alcohol consumption, physical activity, or genetic predisposition, which may limit the overall predictive power of the models.
 
-The first limitation we wish to address concerns some missing values that were present in the dataset and were handled by simple imputation techniques. However, if the mechanism of missingness is not well captured by the distribution of the observed data, this may introduce bias into the analysis. Secondly, a major limitation is the imbalance in the outcome variable: approximately 85% of the observations correspond to the absence of *CHD*. This imbalance can lead the models to favor the majority class, thereby increasing the risk of overlooking high-risk individuals. Another limitation relates to potential multicollinearity among predictors, as correlations between key variables may distort coefficient estimates and reduce model interpretability (e.g. cigarettes per day for smoker and diastolic blood pressure for hypertension). Finally, the dataset may omit relevant risk factors such as dietary habits, alcohol consumption, physical activity, or genetic predisposition. The absence of these variables could reduce the predictive accuracy of the models and overlook important contributors to *CHD* risk.
+
+## Bonus
+
+To solve the imbalance problem, we want to use the SMOTE technique to see if the two models improve. SMOTE (*Synthetic Minority Over-sampling Technique*)[^smote] is a very powerful technique that generates synthetic examples instead of duplicating existing ones. SMOTE generates new minority class samples by interpolating between an existing minority point and one of its nearest minority neighbors. It picks a neighbor at random and creates a new point somewhere along the line between them in feature space. In our case, since we have mixed data types, we have to use SMOTE NC (Nominal-Continous). We set the seed to *42* again and re-train the models. Apparently, SMOTE worked well, greatly improving the *sensitivity* of both models. I can't show the code for space issue, but it can be found on my git[^link].
+
+
+```{r}
+#| echo: false
+# --- Utility function to convert categorical variables to numeric ---
+convert_categoricals <- function(df) {
+  df$sex <- ifelse(df$sex == "Male", 1, 0)
+  df$smoker <- as.numeric(df$smoker)
+  df$stroke <- as.numeric(df$stroke)
+  df$HTN <- as.numeric(df$HTN)
+  df$diabetes <- as.numeric(df$diabetes)
+  return(df)
+}
+
+# --- SMOTE Preparation ---
+train_smote_prep <- train_simple
+train_smote_prep$CHD_bin <- ifelse(train_smote_prep$CHD == "Yes", 1, 0)
+train_smote_prep <- convert_categoricals(train_smote_prep)
+
+X <- train_smote_prep[, !(names(train_smote_prep) %in% c("CHD", "CHD_bin"))]
+y <- train_smote_prep$CHD_bin
+
+set.seed(42)
+smote_output <- SMOTE(X, y, K = 5, dup_size = 3)
+
+train_smote <- smote_output$data
+train_smote$CHD <- factor(ifelse(train_smote$class == 1, "Yes", "No"))
+train_smote$class <- NULL
+
+# --- Prepare test sets ---
+test_logit <- convert_categoricals(test_simple)
+test_knn <- convert_categoricals(test_simple)
+```
+
+```{r}
+#| echo: false
+# --- Logistic Regression ---
+logit_smote <- glm(CHD ~ ., data = train_smote, family = "binomial")
+pred_prob_logit <- predict(logit_smote, newdata = test_logit, type = "response")
+pred_class_logit <- ifelse(pred_prob_logit > 0.5, "Yes", "No")
+cm_logit <- confusionMatrix(factor(pred_class_logit, levels = c("No", "Yes")), 
+                            test_simple$CHD, positive = "Yes")
+
+# --- Print Logistic Regression Output ---
+cat("\n📊 Logistic Regression with SMOTE\n")
+print(cm_logit$table)
+cat("Accuracy:", round(cm_logit$overall["Accuracy"], 4),
+    "Sensitivity:", round(cm_logit$byClass["Sensitivity"], 4),
+    "Specificity:", round(cm_logit$byClass["Specificity"], 4),
+    "FNR:", round(1 - cm_logit$byClass["Sensitivity"], 4), "\n")
+```
+
+```{r}
+#| echo: false
+# --- K-NN ---
+numeric_cols <- c("age", "education", "cpd", "chol", "DBP", "BMI", "HR")
+means <- apply(train_simple[, numeric_cols], 2, mean)
+sds <- apply(train_simple[, numeric_cols], 2, sd)
+
+scale_data <- function(df) {
+  df[, numeric_cols] <- scale(df[, numeric_cols], center = means, scale = sds)
+  return(df)
+}
+
+train_knn <- scale_data(train_smote)
+test_knn <- scale_data(test_knn)
+
+train_knn$CHD <- factor(train_knn$CHD, levels = c("No", "Yes"))
+test_knn$CHD <- factor(test_knn$CHD, levels = c("No", "Yes"))
+
+# training
+ctrl <- trainControl(method = "cv", number = 10)
+k_grid <- expand.grid(k = 5:30)
+
+set.seed(42)
+knn_model <- train(CHD ~ ., data = train_knn, method = "knn",
+                   tuneGrid = k_grid, trControl = ctrl)
+
+best_k <- knn_model$bestTune$k
+pred_knn <- predict(knn_model, newdata = test_knn)
+cm_knn <- confusionMatrix(pred_knn, test_knn$CHD, positive = "Yes")
+
+# --- Print K-NN Output ---
+cat("\n📊 K-NN with SMOTE (best k =", best_k, ")\n")
+print(cm_knn$table)
+cat("Accuracy:", round(cm_knn$overall["Accuracy"], 4),
+    "Sensitivity:", round(cm_knn$byClass["Sensitivity"], 4),
+    "Specificity:", round(cm_knn$byClass["Specificity"], 4),
+    "FNR:", round(1 - cm_knn$byClass["Sensitivity"], 4), "\n")
+```
+
+[^smote]: Chawla, N. V., Bowyer, K. W., Hall, L. O., & Kegelmeyer, W. P. (2002). SMOTE: Synthetic Minority Over-sampling Technique. *Journal of Artificial Intelligence Research*, 16, 321–357. https://doi.org/10.1613/jair.953
+
+[^link]: git rep with .qmd: https://github.com/ettoremiglioranza1012/StatMods_HWdir.git
