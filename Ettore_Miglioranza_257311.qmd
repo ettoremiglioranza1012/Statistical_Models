@@ -430,7 +430,9 @@ test_knn <- scale_data(test_knn)
 
 train_knn$CHD <- factor(train_knn$CHD, levels = c("No", "Yes"))
 test_knn$CHD <- factor(test_knn$CHD, levels = c("No", "Yes"))
+```
 
+```{r}
 # training
 ctrl <- trainControl(method = "cv", number = 10)
 k_grid <- expand.grid(k = 5:30)
